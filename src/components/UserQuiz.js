@@ -325,7 +325,21 @@ export default function UserQuiz({ user, toast, preselectedMaterial, onNavigate 
 
   const handleComplete = (res) => {
     const score = Math.round((res.correct / res.total) * 100);
-    saveQuizResult({ id: `qr-${Date.now()}`, userId: user.id, userName: user.name, materialId: material.id, score, correct: res.correct, total: res.total, completedAt: new Date().toISOString() });
+    const percentage = Math.round((res.correct / res.total) * 100);
+    const passed = percentage >= 90;
+    saveQuizResult({
+      userId: user.id,
+      userName: user.name,
+      materialId: material.id,
+      materialTitle: material.title,
+      score: percentage,
+      correct: res.correct,
+      total: res.total,
+      percentage,
+      passed,
+      completedAt: new Date().toISOString(),
+      timeTaken: 0,
+    });
     setResult({ ...res, score });
     setStage('results');
     if (score >= 90) toast.success(`🎉 ${score}% — You earned a certificate!`);
