@@ -8,7 +8,7 @@ export default function UserCertificates({ user }) {
   const [matMap, setMatMap] = useState({});
 
   useEffect(() => {
-    setResults(getResultsByUser(user.id).filter(r => r.score >= 90));
+    getResultsByUser(user.id).then(data => setResults(data.filter(r => r.passed || r.percentage >= 90)));
     getMaterials().then(mats => setMatMap(Object.fromEntries(mats.map(m => [m.id, m]))));
   }, [user.id]);
 

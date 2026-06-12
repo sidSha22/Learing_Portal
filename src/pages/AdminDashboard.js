@@ -40,7 +40,7 @@ function AdminOverview({ user, onNavigate }) {
 
   useEffect(() => {
     getMaterials().then(setMaterials);
-    setResults(getQuizResults());
+    getQuizResults().then(setResults);
   }, []);
 
   const passed = results.filter(r => r.score >= 90).length;
