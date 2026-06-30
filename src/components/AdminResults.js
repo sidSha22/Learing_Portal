@@ -8,13 +8,13 @@ export default function AdminResults() {
   const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    getQuizResults().then(r => setResults(r));
+    getQuizResults().then(setResults);
     getMaterials().then(mats => setMatMap(Object.fromEntries(mats.map(m => [m.id, m.title]))));
   }, []);
 
   const filtered = filter === 'all' ? results
-    : filter === 'passed' ? results.filter(r => r.score >= 90)
-    : results.filter(r => r.score < 90);
+    : filter === 'passed' ? results.filter(r => r.passed || r.percentage >= 90)
+    : results.filter(r => !r.passed && r.percentage < 90);
 
   return (
     <div className="dash-content fade-in">

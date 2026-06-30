@@ -1,16 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { getMaterials, saveQuizResult } from '../utils/storage';
-import { generateQuestionsFromPDF, generateQuestionsFromText } from '../utils/aiUtils';
+import { getMaterials, getRandomQuestions, getQuestionCount, saveQuizResult } from '../utils/storage';
 import { generateCertificate } from '../utils/certificateUtils';
 import '../pages/Dashboard.css';
 
 // ── Stage 1: Select material ──────────────────────────────────────────────────
 function SelectMaterial({ onSelect }) {
-  const [materials, setMaterials] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [materials, setMaterials]         = useState([]);
+  const [questionCounts, setQuestionCounts] = useState({});
+  const [loading, setLoading]             = useState(true);
+  const [search, setSearch]               = useState('');
 
-  useEffect(() => { getMaterials().then(m => { setMaterials(m); setLoading(false); }); }, []);
+  useEffect(() => {
+    getMaterials().then(async (mats) => {
+      setMaterials(mats);
+      // Load question counts in parallel
+      const counts = {};
+      await Promise.all(mats.map(async m => { counts[m.id] = await getQuestionCount(m.id); }));
+      setQuestionCounts(counts);
+      setLoading(false);
+    });
+  }, []);
 
   const filtered = materials.filter(m =>
     m.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -33,69 +42,50 @@ function SelectMaterial({ onSelect }) {
         <input className="form-input" style={{ width: 240 }} placeholder="🔍 Search…" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-
-
       {filtered.length === 0 ? (
-        <div className="empty-state"><div className="empty-state-icon">◎</div><div className="empty-state-title">No materials available</div><div className="empty-state-sub">Wait for an admin to upload study materials</div></div>
+        <div className="empty-state">
+          <div className="empty-state-icon">◎</div>
+          <div className="empty-state-title">No materials available</div>
+          <div className="empty-state-sub">Wait for an admin to upload study materials and add quiz questions</div>
+        </div>
       ) : (
         <div className="materials-grid">
-          {filtered.map(m => (
-            <div key={m.id} className="material-card">
-              <div className="material-card-icon">{m.fileIcon || '📄'}</div>
-              <div className="material-card-title">{m.title}</div>
-              {m.description && <div className="material-card-desc">{m.description}</div>}
-              <div className="material-card-meta">
-                <span className="badge badge-gray">{(m.fileType || 'file').toUpperCase()}</span>
-                {m.subject && <span className="badge badge-blue">{m.subject}</span>}
+          {filtered.map(m => {
+            const count = questionCounts[m.id] || 0;
+            const ready = count >= 10;
+            return (
+              <div key={m.id} className="material-card">
+                <div className="material-card-icon">{m.fileIcon || '📄'}</div>
+                <div className="material-card-title">{m.title}</div>
+                {m.description && <div className="material-card-desc">{m.description}</div>}
+                <div className="material-card-meta">
+                  <span className="badge badge-gray">{(m.fileType || 'file').toUpperCase()}</span>
+                  {m.subject && <span className="badge badge-blue">{m.subject}</span>}
+                </div>
+                <div style={{ marginTop: 8, marginBottom: 4, fontSize: 12, color: ready ? 'var(--success)' : 'var(--warning)' }}>
+                  {ready ? `✓ ${count} questions available` : `⚠ ${count}/10 questions — not ready yet`}
+                </div>
+                <button className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => onSelect(m)} disabled={!ready}>
+                  {ready ? 'Start Quiz →' : 'Not enough questions'}
+                </button>
               </div>
-              <button className="btn btn-primary" style={{ marginTop: 4 }} onClick={() => onSelect(m)}>
-                Start Quiz →
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-// ── Stage 2: Generating questions ─────────────────────────────────────────────
-function GeneratingQuiz({ material, onGenerated, onError }) {
-  const [status, setStatus] = useState('Preparing AI quiz generator…');
-
+// ── Stage 2: Loading questions ────────────────────────────────────────────────
+function LoadingQuiz({ material, onLoaded, onError }) {
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        let questions;
-        if (material.fileType === 'pdf') {
-          setStatus('Sending PDF to Claude AI for analysis…');
-          try {
-            questions = await generateQuestionsFromPDF(material.id, material.title);
-          } catch (e) {
-            if (e.message === 'API_KEY_MISSING' || e.message === 'API_KEY_INVALID') throw e;
-            // PDF API failed — try text extraction fallback
-            setStatus('Extracting text from PDF…');
-            const { extractTextFromPDF } = await import('../utils/fileUtils');
-            const { getFileData } = await import('../utils/storage');
-            const fileData = await getFileData(material.id);
-            if (!fileData) throw new Error('File data not found.');
-            const text = await extractTextFromPDF(fileData);
-            if (!text || text.length < 50) throw new Error('Could not extract enough text from this PDF. It may be a scanned image.');
-            setStatus('Generating questions from extracted text…');
-            questions = await generateQuestionsFromText(text, material.title);
-          }
-        } else {
-          const contextText = [material.title, material.subject, material.description].filter(Boolean).join('\n\n');
-          setStatus('Generating quiz questions…');
-          questions = await generateQuestionsFromText(contextText, material.title);
-        }
-        if (!cancelled) { setStatus('Quiz ready!'); setTimeout(() => onGenerated(questions), 500); }
-      } catch (err) {
-        if (!cancelled) onError(err.message);
-      }
-    })();
-    return () => { cancelled = true; };
+    getRandomQuestions(material.id, 10)
+      .then(qs => {
+        if (qs.length < 1) { onError('No questions found for this material. Please ask your administrator to add questions.'); return; }
+        onLoaded(qs);
+      })
+      .catch(e => onError(e.message));
   }, []); // eslint-disable-line
 
   return (
@@ -105,10 +95,10 @@ function GeneratingQuiz({ material, onGenerated, onError }) {
           <div style={{ width: 72, height: 72, border: '3px solid var(--border2)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
           <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>{material.fileIcon || '📄'}</span>
         </div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, marginBottom: 8 }}>Generating Your Quiz</h2>
-        <p style={{ color: 'var(--text3)', fontSize: 14, minHeight: 20 }}>{status}</p>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, marginBottom: 8 }}>Preparing Your Quiz</h2>
+        <p style={{ color: 'var(--text3)', fontSize: 14 }}>Selecting 10 random questions from the question bank…</p>
         <div style={{ marginTop: 20, fontSize: 12, color: 'var(--text3)', background: 'var(--bg3)', borderRadius: 'var(--radius2)', padding: '10px 16px', border: '1px solid var(--border)' }}>
-          AI is reading <strong style={{ color: 'var(--text2)' }}>{material.title}</strong> and crafting 10 questions
+          <strong style={{ color: 'var(--text2)' }}>{material.title}</strong>
         </div>
       </div>
     </div>
@@ -117,22 +107,12 @@ function GeneratingQuiz({ material, onGenerated, onError }) {
 
 // ── Error screen ──────────────────────────────────────────────────────────────
 function QuizError({ error, onBack }) {
-  const isKeyMissing = error === 'API_KEY_MISSING';
-  const isKeyInvalid = error === 'API_KEY_INVALID';
-  const isKeyError = isKeyMissing || isKeyInvalid;
-
   return (
     <div className="dash-content fade-in" style={{ maxWidth: 520 }}>
       <div className="card" style={{ textAlign: 'center', padding: '40px 36px' }}>
         <div style={{ fontSize: 52, marginBottom: 16 }}>⚠️</div>
-        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, marginBottom: 8, color: 'var(--warning)' }}>
-          {isKeyMissing ? 'API Key Not Configured' : isKeyInvalid ? 'Invalid API Key' : 'Quiz Generation Failed'}
-        </h2>
-        <p style={{ color: 'var(--text2)', fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>
-          {isKeyMissing && <>An Anthropic API key has not been set up yet. Please ask your <strong>administrator</strong> to log in, go to <strong>Settings</strong>, and add a valid API key from <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>console.anthropic.com</a>.</>}
-          {isKeyInvalid && <>The configured API key is invalid or expired. Please ask your <strong>administrator</strong> to go to <strong>Settings</strong> and update it with a valid key from <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>console.anthropic.com</a>.</>}
-          {!isKeyError && (error || 'An unexpected error occurred. Please try again.')}
-        </p>
+        <h2 style={{ fontFamily: 'var(--font-display)', fontSize: 22, marginBottom: 8, color: 'var(--warning)' }}>Quiz Generation Failed</h2>
+        <p style={{ color: 'var(--text2)', fontSize: 14, lineHeight: 1.7, marginBottom: 24 }}>{error || 'An unexpected error occurred. Please try again.'}</p>
         <button className="btn btn-secondary" onClick={onBack}>← Back to Materials</button>
       </div>
     </div>
@@ -141,14 +121,14 @@ function QuizError({ error, onBack }) {
 
 // ── Stage 3: Quiz interface ────────────────────────────────────────────────────
 function QuizInterface({ material, questions, onComplete }) {
-  const [current, setCurrent] = useState(0);
-  const [answers, setAnswers] = useState({});
+  const [current, setCurrent]   = useState(0);
+  const [answers, setAnswers]   = useState({});
   const [selected, setSelected] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
 
-  const q = questions[current];
+  const q        = questions[current];
   const progress = (current / questions.length) * 100;
-  const isLast = current === questions.length - 1;
+  const isLast   = current === questions.length - 1;
 
   const handleConfirm = () => {
     if (selected === null) return;
@@ -230,13 +210,13 @@ function QuizInterface({ material, questions, onComplete }) {
 
 // ── Stage 4: Results ──────────────────────────────────────────────────────────
 function QuizResults({ material, result, user, onRetake, onNavigate }) {
-  const { correct, total, score } = result;
-  const passed = score >= 90;
+  const { correct, total } = result;
+  const percentage = Math.round((correct / total) * 100);
+  const passed     = percentage >= 90;
   const [certData, setCertData] = useState(null);
-  const pct = (correct / total) * 100;
 
   const handleGenerateCert = () => {
-    setCertData(generateCertificate({ userName: user.name, materialTitle: material.title, score, date: new Date().toISOString() }));
+    setCertData(generateCertificate({ userName: user.name, materialTitle: material.title, score: percentage, date: new Date().toISOString() }));
   };
 
   const handleDownload = () => {
@@ -254,7 +234,7 @@ function QuizResults({ material, result, user, onRetake, onNavigate }) {
           {passed ? 'Congratulations!' : 'Good Effort!'}
         </h2>
         <p style={{ color: 'var(--text3)', fontSize: 14, marginBottom: 30 }}>
-          {passed ? 'You passed with distinction and earned a certificate.' : `You need ${90 - score}% more to earn a certificate. Keep studying!`}
+          {passed ? 'You passed with distinction and earned a certificate.' : `You need ${90 - percentage}% more to earn a certificate. Keep studying!`}
         </p>
 
         {/* Score ring */}
@@ -262,15 +242,15 @@ function QuizResults({ material, result, user, onRetake, onNavigate }) {
           <svg width="128" height="128" viewBox="0 0 128 128" style={{ transform: 'rotate(-90deg)' }}>
             <circle cx="64" cy="64" r="54" fill="none" stroke="var(--border)" strokeWidth="9" />
             <circle cx="64" cy="64" r="54" fill="none"
-              stroke={passed ? 'var(--success)' : score >= 60 ? 'var(--warning)' : 'var(--danger)'}
+              stroke={passed ? 'var(--success)' : percentage >= 60 ? 'var(--warning)' : 'var(--danger)'}
               strokeWidth="9" strokeLinecap="round"
               strokeDasharray={`${2 * Math.PI * 54}`}
-              strokeDashoffset={`${2 * Math.PI * 54 * (1 - pct / 100)}`}
+              strokeDashoffset={`${2 * Math.PI * 54 * (1 - percentage / 100)}`}
               style={{ transition: 'stroke-dashoffset 1.2s ease' }}
             />
           </svg>
           <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: passed ? 'var(--success)' : 'var(--warning)', lineHeight: 1 }}>{score}%</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 700, color: passed ? 'var(--success)' : 'var(--warning)', lineHeight: 1 }}>{percentage}%</span>
             <span style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>Score</span>
           </div>
         </div>
@@ -313,45 +293,37 @@ function QuizResults({ material, result, user, onRetake, onNavigate }) {
 // ── Main orchestrator ─────────────────────────────────────────────────────────
 export default function UserQuiz({ user, toast, preselectedMaterial, onNavigate }) {
   const [material, setMaterial] = useState(preselectedMaterial || null);
-  const [stage, setStage] = useState(preselectedMaterial ? 'generating' : 'select');
+  const [stage, setStage]       = useState(preselectedMaterial ? 'loading' : 'select');
   const [questions, setQuestions] = useState(null);
-  const [result, setResult] = useState(null);
+  const [result, setResult]     = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const handleSelect = (m) => { setMaterial(m); setStage('generating'); };
-  const handleGenerated = (qs) => { setQuestions(qs); setStage('quiz'); };
-  const handleError = (msg) => { setErrorMsg(msg); setStage('error'); };
-  const handleBackFromError = () => { setStage('select'); setMaterial(null); setErrorMsg(null); };
+  const handleSelect    = (m) => { setMaterial(m); setStage('loading'); };
+  const handleLoaded    = (qs) => { setQuestions(qs); setStage('quiz'); };
+  const handleError     = (msg) => { setErrorMsg(msg); setStage('error'); };
+  const handleBackError = () => { setStage('select'); setMaterial(null); setErrorMsg(null); };
 
   const handleComplete = (res) => {
-    const score = Math.round((res.correct / res.total) * 100);
     const percentage = Math.round((res.correct / res.total) * 100);
-    const passed = percentage >= 90;
+    const passed     = percentage >= 90;
     saveQuizResult({
-      userId: user.id,
-      userName: user.name,
-      materialId: material.id,
-      materialTitle: material.title,
-      score: percentage,
-      correct: res.correct,
-      total: res.total,
-      percentage,
-      passed,
-      completedAt: new Date().toISOString(),
-      timeTaken: 0,
+      userId: user.id, userName: user.name,
+      materialId: material.id, materialTitle: material.title,
+      score: percentage, total: res.total, percentage, passed,
+      completedAt: new Date().toISOString(), timeTaken: 0,
     });
-    setResult({ ...res, score });
+    setResult(res);
     setStage('results');
-    if (score >= 90) toast.success(`🎉 ${score}% — You earned a certificate!`);
-    else toast.info(`Score: ${score}%. You need 90% to pass.`);
+    if (passed) toast.success(`🎉 ${percentage}% — You earned a certificate!`);
+    else toast.info(`Score: ${percentage}%. You need 90% to pass.`);
   };
 
-  const handleRetake = () => { setStage('generating'); setResult(null); setQuestions(null); setErrorMsg(null); };
+  const handleRetake = () => { setStage('loading'); setResult(null); setQuestions(null); setErrorMsg(null); };
 
-  if (stage === 'select') return <SelectMaterial onSelect={handleSelect} />;
-  if (stage === 'generating') return <GeneratingQuiz material={material} onGenerated={handleGenerated} onError={handleError} />;
-  if (stage === 'error') return <QuizError error={errorMsg} onBack={handleBackFromError} />;
-  if (stage === 'quiz') return <QuizInterface material={material} questions={questions} onComplete={handleComplete} />;
+  if (stage === 'select')  return <SelectMaterial onSelect={handleSelect} />;
+  if (stage === 'loading') return <LoadingQuiz material={material} onLoaded={handleLoaded} onError={handleError} />;
+  if (stage === 'error')   return <QuizError error={errorMsg} onBack={handleBackError} />;
+  if (stage === 'quiz')    return <QuizInterface material={material} questions={questions} onComplete={handleComplete} />;
   if (stage === 'results') return <QuizResults material={material} result={result} user={user} onRetake={handleRetake} onNavigate={onNavigate} />;
   return null;
 }

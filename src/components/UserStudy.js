@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getMaterials } from '../utils/storage';
+import React, { useState, useEffect, useRef } from 'react';
+import { getMaterials, getFileData } from '../utils/storage';
 import { formatFileSize } from '../utils/fileUtils';
 import '../pages/Dashboard.css';
 
@@ -71,28 +71,53 @@ export default function UserStudy({ onStartQuiz }) {
 
 // Converts a base64 data URL to a Blob URL — required for iframe/video/audio
 // because browsers block data: URIs in these elements for security reasons.
-function useFileBlob(material) {
+function useFileBlob(materialId, fileMime) {
   const [blobUrl, setBlobUrl] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const prevUrl = useRef(null);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    if (material.fileDownloadURL) {
-      setBlobUrl(material.fileDownloadURL);
-      setLoading(false);
-    } else {
-      setError('File URL not available.');
-      setLoading(false);
-    }
-  }, [material.id, material.fileDownloadURL]);
+
+    getFileData(materialId)
+      .then(dataUrl => {
+        if (cancelled) return;
+        if (!dataUrl) { setError('File not found in storage.'); setLoading(false); return; }
+
+        // Convert base64 data URL → Blob → Blob URL
+        try {
+          const [header, base64] = dataUrl.split(',');
+          const mime = fileMime || header.match(/:(.*?);/)?.[1] || 'application/octet-stream';
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: mime });
+          const url = URL.createObjectURL(blob);
+          prevUrl.current = url;
+          setBlobUrl(url);
+          setLoading(false);
+        } catch (e) {
+          setError('Failed to load file: ' + e.message);
+          setLoading(false);
+        }
+      })
+      .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
+
+    return () => {
+      cancelled = true;
+      // Revoke old blob URL to free memory
+      if (prevUrl.current) { URL.revokeObjectURL(prevUrl.current); prevUrl.current = null; }
+    };
+  }, [materialId, fileMime]);
 
   return { blobUrl, loading, error };
 }
 
 function MaterialViewer({ material, onBack, onStartQuiz }) {
-  const { blobUrl, loading, error } = useFileBlob(material);
+  const { blobUrl, loading, error } = useFileBlob(material.id, material.fileMime);
 
   if (loading) return (
     <div className="dash-content fade-in" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300 }}>

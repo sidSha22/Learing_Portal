@@ -68,10 +68,10 @@ New users can self-register from the login page (they are always assigned the "U
 
 1. Log in as **Admin**
 2. Go to **Settings** in the sidebar
-3. Paste your Gemini API key (starts with `AIza...`)
+3. Paste your Anthropic API key (`sk-ant-api03-...`)
 4. Click **Save Key**
 
-Get your API key from: https://aistudio.google.com/apikey
+Get your API key from: https://console.anthropic.com
 
 > The key is stored locally in your browser and never sent anywhere except Anthropic's API.
 
@@ -84,7 +84,7 @@ Get your API key from: https://aistudio.google.com/apikey
 2. Go to **Upload Material** — upload a PDF, video, audio, or image file
 3. Go to **Manage Materials** — edit titles or delete materials
 4. Go to **Quiz Results** — see all learner attempts and scores
-5. Go to **Settings** — add your Gemini API key for AI quiz generation
+5. Go to **Settings** — add your Anthropic API key for AI quiz generation
 
 ### As User/Learner:
 1. Log in or register a new account
@@ -152,7 +152,7 @@ All data is stored in your **browser's localStorage**:
 |---------|----------|
 | `npm: command not found` | Install Node.js from nodejs.org |
 | Port 3000 already in use | Run `npm start` — it will offer port 3001 automatically |
-| Quiz generation fails | Check your Gemini API key in Admin → Settings |
+| Quiz generation fails | Check your API key in Admin → Settings |
 | Large file upload slow | Files up to 50MB supported; very large videos may be slow |
 | Certificate not generating | Make sure you scored ≥ 90% and click "Generate Certificate" |
 

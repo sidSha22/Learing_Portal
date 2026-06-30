@@ -1,25 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { findUser, registerUser, saveSession, seedDefaultUsers } from '../utils/storage';
+import React, { useState } from 'react';
+import { findUser, registerUser, saveSession } from '../utils/storage';
 import './LoginPage.css';
 
 export default function LoginPage({ onLogin }) {
-  const [tab, setTab]   = useState('login');
+  const [tab, setTab] = useState('login');
   const [form, setForm] = useState({ username: '', password: '', name: '' });
-  const [error, setError]   = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [seeding, setSeeding] = useState(true);
-
-  // Seed default admin/user accounts on first ever load
-  useEffect(() => {
-    seedDefaultUsers().finally(() => setSeeding(false));
-  }, []);
 
   const set = (k, v) => { setForm(f => ({ ...f, [k]: v })); setError(''); };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
-    const user = await findUser(form.username.trim(), form.password);
+    await new Promise(r => setTimeout(r, 400));
+    const user = findUser(form.username.trim(), form.password);
     if (!user) { setError('Invalid username or password.'); setLoading(false); return; }
     saveSession(user);
     onLogin(user);
@@ -27,25 +22,16 @@ export default function LoginPage({ onLogin }) {
 
   const handleRegister = async (e) => {
     e.preventDefault();
-    if (!form.name.trim())              { setError('Full name is required.'); return; }
-    if (form.username.trim().length < 3){ setError('Username must be at least 3 characters.'); return; }
-    if (form.password.length < 6)       { setError('Password must be at least 6 characters.'); return; }
+    if (!form.name.trim()) { setError('Full name is required.'); return; }
+    if (form.username.trim().length < 3) { setError('Username must be at least 3 characters.'); return; }
+    if (form.password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setLoading(true);
-    const result = await registerUser(form.name.trim(), form.username.trim(), form.password);
+    await new Promise(r => setTimeout(r, 400));
+    const result = registerUser(form.name.trim(), form.username.trim(), form.password);
     if (result.error) { setError(result.error); setLoading(false); return; }
     saveSession(result.user);
     onLogin(result.user);
   };
-
-  if (seeding) return (
-    <div className="login-root">
-      <div className="login-bg"><div className="login-bg-grid" /><div className="login-bg-glow" /></div>
-      <div className="login-card fade-in" style={{ textAlign: 'center', padding: '60px 40px' }}>
-        <div className="spinner" style={{ width: 32, height: 32, margin: '0 auto 16px' }} />
-        <div style={{ color: 'var(--text2)', fontSize: 14 }}>Connecting to database…</div>
-      </div>
-    </div>
-  );
 
   return (
     <div className="login-root">
@@ -57,9 +43,9 @@ export default function LoginPage({ onLogin }) {
         <div className="login-logo">
           <div className="login-logo-icon">
             <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <rect x="2"  y="2"  width="11" height="11" rx="2" fill="#4f8ef7"/>
-              <rect x="15" y="2"  width="11" height="11" rx="2" fill="rgba(79,142,247,0.5)"/>
-              <rect x="2"  y="15" width="11" height="11" rx="2" fill="rgba(79,142,247,0.5)"/>
+              <rect x="2" y="2" width="11" height="11" rx="2" fill="#4f8ef7"/>
+              <rect x="15" y="2" width="11" height="11" rx="2" fill="rgba(79,142,247,0.5)"/>
+              <rect x="2" y="15" width="11" height="11" rx="2" fill="rgba(79,142,247,0.5)"/>
               <rect x="15" y="15" width="11" height="11" rx="2" fill="#4f8ef7"/>
             </svg>
           </div>
@@ -70,7 +56,7 @@ export default function LoginPage({ onLogin }) {
         </div>
 
         <div className="login-tabs">
-          <button className={`login-tab ${tab === 'login'    ? 'active' : ''}`} onClick={() => { setTab('login');    setError(''); }}>Sign In</button>
+          <button className={`login-tab ${tab === 'login' ? 'active' : ''}`} onClick={() => { setTab('login'); setError(''); }}>Sign In</button>
           <button className={`login-tab ${tab === 'register' ? 'active' : ''}`} onClick={() => { setTab('register'); setError(''); }}>Register</button>
         </div>
 
