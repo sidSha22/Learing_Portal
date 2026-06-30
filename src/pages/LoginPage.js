@@ -14,7 +14,7 @@ export default function LoginPage({ onLogin }) {
     e.preventDefault();
     setLoading(true);
     await new Promise(r => setTimeout(r, 400));
-    const user = findUser(form.username.trim(), form.password);
+    const user = await findUser(form.username.trim(), form.password);
     if (!user) { setError('Invalid username or password.'); setLoading(false); return; }
     saveSession(user);
     onLogin(user);
@@ -27,7 +27,7 @@ export default function LoginPage({ onLogin }) {
     if (form.password.length < 6) { setError('Password must be at least 6 characters.'); return; }
     setLoading(true);
     await new Promise(r => setTimeout(r, 400));
-    const result = registerUser(form.name.trim(), form.username.trim(), form.password);
+    const result = await registerUser(form.name.trim(), form.username.trim(), form.password);
     if (result.error) { setError(result.error); setLoading(false); return; }
     saveSession(result.user);
     onLogin(result.user);
